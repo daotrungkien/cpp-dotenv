@@ -65,6 +65,26 @@ protected:
         }
     }
 
+    static bool getenv(const std::string& name, std::string& value) {
+#ifdef _WIN32
+        char* buf = nullptr;
+        size_t sz = 0;
+        if (_dupenv_s(&buf, &sz, name.c_str()) == 0 && buf != nullptr) {
+            value = buf;
+            free(buf);
+            return true;
+        }
+#else
+        const char* buf = std::getenv(name.c_str());
+        if (buf) {
+            value = buf;
+            return true;
+        }
+#endif
+
+        return false;
+    }
+
 public:
     dotenv(
         int argc = 0, const char** argv = nullptr,
@@ -99,10 +119,8 @@ public:
         if (itr_dotenv != variables.end()) return true;
         
         // searches environment variable items
-        const char* value = std::getenv(name.c_str());
-        if (value) return true;
-
-        return false;
+        std::string value;
+        return getenv(name, value);
     }
 
 
@@ -117,10 +135,9 @@ public:
         if (itr_dotenv != variables.end()) return itr_dotenv->second;
         
         // searches environment variable items
-        const char* value = std::getenv(name.c_str());
-        if (value) return value;
-
-        return std::string();
+        std::string value;
+        getenv(name, value);
+        return value;
     }
 
 
