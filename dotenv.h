@@ -24,10 +24,11 @@
 
 
 class dotenv {
-protected:
-    enum class var_source { command_line, env_variable, dotenv_file };
+public:
+    enum class source { any, command_line, dotenv_file, environment };
 
-    std::multimap<std::pair<std::string, var_source>, std::string> variables;
+protected:
+    std::multimap<std::pair<std::string, source>, std::string> variables;
 
     static std::string trim(const std::string& s) {
         auto wsfront = std::find_if_not(s.begin(), s.end(), [](char c) { return std::isspace(c); });
@@ -35,15 +36,15 @@ protected:
         return (wsback <= wsfront ? std::string() : std::string(wsfront, wsback));
     }
 
-    void read_variable(const std::string& s, var_source source) {
+    void read_variable(const std::string& s, source var_source) {
         auto pos = s.find('=');
         if (pos > 0) {
             std::string name = trim(s.substr(0, pos));
             std::string value = s.substr(pos + 1);  // value is not trimed, leading and trailing spaces are kept
-            if (!name.empty()) variables.emplace(std::make_pair(std::make_pair(name, source), value));
+            if (!name.empty()) variables.emplace(std::make_pair(std::make_pair(name, var_source), value));
         } else {
             std::string name = trim(s);
-            if (!name.empty()) variables.emplace(std::make_pair(std::make_pair(name, source), std::string()));
+            if (!name.empty()) variables.emplace(std::make_pair(std::make_pair(name, var_source), std::string()));
         }
     }
 
@@ -52,7 +53,7 @@ protected:
             std::string s = argv[i];
             if (s.substr(0, 2) != "--") continue;
 
-            read_variable(s.substr(2), var_source::command_line);
+            read_variable(s.substr(2), source::command_line);
         }
     }
 
@@ -61,11 +62,11 @@ protected:
 
         std::string s;
         while (std::getline(file, s)) {
-            read_variable(s, var_source::dotenv_file);
+            read_variable(s, source::dotenv_file);
         }
     }
 
-    static bool getenv(const std::string& name, std::string& value) {
+    static bool my_getenv(const std::string& name, std::string& value) {
 #ifdef _WIN32
         char* buf = nullptr;
         size_t sz = 0;
@@ -108,36 +109,60 @@ public:
     }
 
 
-    // checks if a variable exists
-    bool exists(const std::string& name) const {
-        // searches command-line items
-        auto itr_cmdline = variables.find(std::make_pair(name, var_source::command_line));
-        if (itr_cmdline != variables.end()) return true;
+    // checks if a variable exists in the selected source(s)
+    bool exists(const std::string& name, source var_source = source::any) const {
+        if (var_source == source::any || var_source == source::command_line) {
+            auto itr_cmdline = variables.find(std::make_pair(name, source::command_line));
+            if (itr_cmdline != variables.end()) return true;
+        }
 
-        // searches .env file
-        auto itr_dotenv = variables.find(std::make_pair(name, var_source::dotenv_file));
-        if (itr_dotenv != variables.end()) return true;
-        
-        // searches environment variable items
-        std::string value;
-        return getenv(name, value);
+        if (var_source == source::any || var_source == source::dotenv_file) {
+            auto itr_dotenv = variables.find(std::make_pair(name, source::dotenv_file));
+            if (itr_dotenv != variables.end()) return true;
+        }
+
+        if (var_source == source::any || var_source == source::environment) {
+            std::string value;
+            if (my_getenv(name, value)) return true;
+        }
+
+        return false;
     }
 
 
-    // returns the value of a variable if it exists, or an empty string if it does not exist
-    std::string operator[](const std::string& name) const {
-        // searches command-line items
-        auto itr_cmdline = variables.find(std::make_pair(name, var_source::command_line));
-        if (itr_cmdline != variables.end()) return itr_cmdline->second;
-
-        // searches .env file
-        auto itr_dotenv = variables.find(std::make_pair(name, var_source::dotenv_file));
-        if (itr_dotenv != variables.end()) return itr_dotenv->second;
+    // returns the value of a variable if it exists in the selected source(s),
+    // or a given default-valued string if it does not exist
+    std::string get(const std::string& name, const std::string& default_value = std::string(), source var_source = source::any) const {
+        if (var_source == source::any || var_source == source::command_line) {
+            auto itr_cmdline = variables.find(std::make_pair(name, source::command_line));
+            if (itr_cmdline != variables.end()) return itr_cmdline->second;
+        }
         
-        // searches environment variable items
-        std::string value;
-        getenv(name, value);
-        return value;
+        if (var_source == source::any || var_source == source::dotenv_file) {
+            auto itr_dotenv = variables.find(std::make_pair(name, source::dotenv_file));
+            if (itr_dotenv != variables.end()) return itr_dotenv->second;
+        }
+
+        if (var_source == source::any || var_source == source::environment) {
+            std::string value;
+            if (my_getenv(name, value)) return value;
+        }
+
+        return default_value;
+    }
+
+
+    // returns the value of a variable if it exists in the selected source(s),
+    // or an empty string if it does not exist
+    std::string get(const std::string& name, source var_source) const {
+        return get(name, std::string(), var_source);
+    }
+
+
+    // returns the value of a variable if it exists in any of the sources,
+    // or an empty string if it does not exist
+    std::string operator[](const std::string& name) const {
+        return get(name, std::string(), source::any);
     }
 
 
