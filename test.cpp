@@ -16,7 +16,7 @@ int main(int argc, const char** argv) {
         dotenv::in_program_folder("test-custom.env")
     }};
 
-    // looks for variable from any source
+    // looks for variables from any source
     cout << "PATH = " << env["PATH"] << endl;
     cout << "VAR1 = " << env["VAR1"] << endl;
     cout << "VAR2 = " << env["VAR2"] << endl;
